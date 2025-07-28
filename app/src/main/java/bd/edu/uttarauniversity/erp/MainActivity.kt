@@ -44,7 +44,7 @@ fun WebViewExample(modifier: Modifier) {
         WebView(it).apply {
             settings.javaScriptEnabled = true
             settings.javaScriptCanOpenWindowsAutomatically = true
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             settings.domStorageEnabled = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
 
