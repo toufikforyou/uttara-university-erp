@@ -1,28 +1,33 @@
 package bd.edu.uttarauniversity.erp
 
+import android.annotation.SuppressLint
 import android.os.Bundle
+import android.view.ViewGroup
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import bd.edu.uttarauniversity.erp.ui.theme.ERPUttaraUniversityTheme
+import androidx.compose.ui.viewinterop.AndroidView
+import bd.edu.uttarauniversity.erp.ui.theme.UUTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ERPUttaraUniversityTheme {
+            UUTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
+                    WebViewExample(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
                     )
                 }
             }
@@ -30,18 +35,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
+fun WebViewExample(modifier: Modifier) {
+    val mUrl = "https://erp.uttarauniversity.edu.bd/"
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    ERPUttaraUniversityTheme {
-        Greeting("Android")
-    }
+    AndroidView(modifier = modifier, factory = {
+        WebView(it).apply {
+            settings.javaScriptEnabled = true
+            settings.javaScriptCanOpenWindowsAutomatically = true
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            settings.domStorageEnabled = true
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            webViewClient = WebViewClient()
+            loadUrl(mUrl)
+        }
+    }, update = {
+        it.loadUrl(mUrl)
+    })
 }
