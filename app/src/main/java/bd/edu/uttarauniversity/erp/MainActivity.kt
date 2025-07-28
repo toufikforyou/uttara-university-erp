@@ -54,7 +54,5 @@ fun WebViewExample(modifier: Modifier) {
             webViewClient = WebViewClient()
             loadUrl(mUrl)
         }
-    }, update = {
-        it.loadUrl(mUrl)
     })
 }
