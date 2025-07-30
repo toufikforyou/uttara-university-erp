@@ -191,7 +191,7 @@ fun WebViewExample(modifier: Modifier, themeManager: ThemeManager) {
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "No Internet Connection")
+                    Text(text = "An error occurred while loading the page. Please check your connection or try again later.")
                     Button(onClick = { webView?.reload() }) {
                         Text("Try Again")
                     }
