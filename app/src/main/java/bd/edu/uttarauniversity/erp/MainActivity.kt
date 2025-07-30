@@ -1,6 +1,7 @@
 package bd.edu.uttarauniversity.erp
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.ViewGroup
@@ -14,7 +15,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,15 +26,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
 import bd.edu.uttarauniversity.erp.ui.theme.UUTheme
+import kotlinx.coroutines.launch
+
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 sealed class WebViewState {
     object Loading : WebViewState()
@@ -48,12 +56,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val themeManager = ThemeManager(LocalContext.current.dataStore)
+
             UUTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     WebViewExample(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(innerPadding)
+                            .padding(innerPadding),
+                        themeManager = themeManager
                     )
                 }
             }
@@ -63,12 +74,12 @@ class MainActivity : ComponentActivity() {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun WebViewExample(modifier: Modifier) {
+fun WebViewExample(modifier: Modifier, themeManager: ThemeManager) {
     val mUrl = "https://erp.uttarauniversity.edu.bd/"
     var webView: WebView? by remember { mutableStateOf(null) }
     var webViewState by remember { mutableStateOf<WebViewState>(WebViewState.Loading) }
-    val isDarkTheme = isSystemInDarkTheme()
-    val backgroundColor = MaterialTheme.colorScheme.background
+    val isDarkTheme by themeManager.isDarkTheme.collectAsState(initial = false)
+    val coroutineScope = rememberCoroutineScope()
 
     BackHandler(enabled = webView?.canGoBack() == true) {
         webView?.goBack()
@@ -100,14 +111,13 @@ fun WebViewExample(modifier: Modifier) {
                                 webViewState = WebViewState.Success
                             }
                             if (isDarkTheme) {
-                                val hexColor =
-                                    String.format("#%06X", (0xFFFFFF and backgroundColor.toArgb()))
+
                                 val css = """
                                     body {
-                                        background-color: $hexColor !important;
+                                        background-color: #020a05 !important;
                                     }
                                     #header, .sidebar, .sidebar-nav, .nav-item, .nav-link, .main, .tab-content {
-                                        background-color: $hexColor !important;
+                                        background-color: #020a05 !important;
                                         color: #FFFFFF !important;
                                     }
                                     .table>thead {
@@ -184,6 +194,13 @@ fun WebViewExample(modifier: Modifier) {
                     Text(text = "No Internet Connection")
                     Button(onClick = { webView?.reload() }) {
                         Text("Try Again")
+                    }
+                    Button(onClick = {
+                        coroutineScope.launch {
+                            themeManager.toggleTheme()
+                        }
+                    }) {
+                        Text("Toggle Theme")
                     }
                 }
             }
