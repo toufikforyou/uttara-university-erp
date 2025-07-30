@@ -14,6 +14,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,10 +32,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import bd.edu.uttarauniversity.erp.ui.theme.UUTheme
 
-// Sealed class to represent WebView state
 sealed class WebViewState {
     object Loading : WebViewState()
     object Success : WebViewState()
@@ -66,6 +67,8 @@ fun WebViewExample(modifier: Modifier) {
     val mUrl = "https://erp.uttarauniversity.edu.bd/"
     var webView: WebView? by remember { mutableStateOf(null) }
     var webViewState by remember { mutableStateOf<WebViewState>(WebViewState.Loading) }
+    val isDarkTheme = isSystemInDarkTheme()
+    val backgroundColor = MaterialTheme.colorScheme.background
 
     BackHandler(enabled = webView?.canGoBack() == true) {
         webView?.goBack()
@@ -96,12 +99,51 @@ fun WebViewExample(modifier: Modifier) {
                             if (webViewState !is WebViewState.Error && webViewState !is WebViewState.PageNotFound) {
                                 webViewState = WebViewState.Success
                             }
+                            if (isDarkTheme) {
+                                val hexColor =
+                                    String.format("#%06X", (0xFFFFFF and backgroundColor.toArgb()))
+                                val css = """
+                                    body {
+                                        background-color: $hexColor !important;
+                                    }
+                                    #header, .sidebar, .sidebar-nav, .nav-item, .nav-link, .main, .tab-content {
+                                        background-color: $hexColor !important;
+                                        color: #FFFFFF !important;
+                                    }
+                                    .table>thead {
+                                        background-color: black !important;
+                                    }
+                                    table tbody tr td, table tfoot tr td {
+                                        color: #FFFFFF !important;
+                                    }
+                                    table thead tr td, table tfoot tr td {
+                                        background-color: #343a40 !important;
+                                        color: #FFFFFF !important;
+                                    }
+                                    table tbody .table-secondary td {
+                                        background: #343a40 !important;
+                                    }
+                                    
+                                    .tab-content, .card, .card-header, .card-body, .dropdown-menu, .modal-content, .select2-dropdown{
+                                        background: #212529 !important;
+                                    }
+                                    .dropdown-item, .nav-link, .dropdown-header, .dropdown-header h6 {
+                                        color: #FFFFFF !important;
+                                    }
+                                """
+                                view?.evaluateJavascript(
+                                    """
+                                    const style = document.createElement('style');
+                                    style.type = 'text/css';
+                                    style.appendChild(document.createTextNode(`$css`));
+                                    document.head.appendChild(style);
+                                """, null
+                                )
+                            }
                         }
 
                         override fun onReceivedError(
-                            view: WebView?,
-                            request: WebResourceRequest?,
-                            error: WebResourceError?
+                            view: WebView?, request: WebResourceRequest?, error: WebResourceError?
                         ) {
                             super.onReceivedError(view, request, error)
                             if (request?.isForMainFrame == true) {
