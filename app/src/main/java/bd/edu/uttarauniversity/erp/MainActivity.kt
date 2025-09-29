@@ -30,11 +30,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.semantics.contentDescription
+import androidx.compose.foundation.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
@@ -79,9 +82,23 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "se
 sealed class WebViewState {
     object Loading : WebViewState()
     data class Success(val showSuccessMessage: Boolean = true) : WebViewState()
-    object Error : WebViewState()
+    data class Error(val errorType: ErrorType = ErrorType.NETWORK) : WebViewState()
     object PageNotFound : WebViewState()
 }
+
+enum class ErrorType {
+    NETWORK,
+    SSL,
+    TIMEOUT,
+    UNKNOWN
+}
+
+data class ErrorInfo(
+    val title: String,
+    val message: String,
+    val icon: ImageVector,
+    val tip: String
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -146,7 +163,14 @@ fun WebViewExample(modifier: Modifier) {
                         ) {
                             super.onReceivedError(view, request, error)
                             if (request?.isForMainFrame == true) {
-                                webViewState = WebViewState.Error
+                                val errorType = when (error?.errorCode) {
+                                    WebViewClient.ERROR_HOST_LOOKUP,
+                                    WebViewClient.ERROR_CONNECT -> ErrorType.NETWORK
+                                    WebViewClient.ERROR_TIMEOUT -> ErrorType.TIMEOUT
+                                    WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> ErrorType.SSL
+                                    else -> ErrorType.UNKNOWN
+                                }
+                                webViewState = WebViewState.Error(errorType)
                             }
                         }
 
@@ -174,6 +198,7 @@ fun WebViewExample(modifier: Modifier) {
 
             is WebViewState.Error -> {
                 ModernErrorScreen(
+                    errorType = webViewState.errorType,
                     onRetry = { webView?.reload() }
                 )
             }
@@ -231,7 +256,8 @@ fun ModernLoadingScreen() {
                 CircularProgressIndicator(
                     modifier = Modifier
                         .size(64.dp)
-                        .scale(scale),
+                        .scale(scale)
+                        .semantics { contentDescription = "Loading portal, please wait" },
                     strokeWidth = 6.dp,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -259,7 +285,34 @@ fun ModernLoadingScreen() {
 }
 
 @Composable
-fun ModernErrorScreen(onRetry: () -> Unit) {
+fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> Unit) {
+    val (title, message, icon, tip) = when (errorType) {
+        ErrorType.NETWORK -> ErrorInfo(
+            title = "Connection Failed",
+            message = "Unable to connect to the ERP server.\nPlease check your internet connection and try again.",
+            icon = Icons.Default.SignalWifiOff,
+            tip = "💡 Tip: Make sure you have a stable internet connection"
+        )
+        ErrorType.SSL -> ErrorInfo(
+            title = "Security Error",
+            message = "There's a security issue with the connection.\nThe site's certificate may have expired.",
+            icon = Icons.Default.Warning,
+            tip = "🔒 Tip: This is usually a temporary server issue"
+        )
+        ErrorType.TIMEOUT -> ErrorInfo(
+            title = "Connection Timeout",
+            message = "The server is taking too long to respond.\nPlease try again in a moment.",
+            icon = Icons.Default.SignalWifiOff,
+            tip = "⏱️ Tip: The server might be busy. Please wait and retry"
+        )
+        ErrorType.UNKNOWN -> ErrorInfo(
+            title = "Something Went Wrong",
+            message = "An unexpected error occurred.\nPlease try refreshing the page.",
+            icon = Icons.Default.Warning,
+            tip = "🔄 Tip: A simple refresh often fixes this issue"
+        )
+    }
+    
     AnimatedVisibility(
         visible = true,
         enter = fadeIn(tween(500)),
@@ -297,8 +350,8 @@ fun ModernErrorScreen(onRetry: () -> Unit) {
                     )
                     
                     Icon(
-                        imageVector = Icons.Default.SignalWifiOff,
-                        contentDescription = "No Internet Connection",
+                        imageVector = icon,
+                        contentDescription = "Error: $title",
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier
                             .size(80.dp)
@@ -308,7 +361,7 @@ fun ModernErrorScreen(onRetry: () -> Unit) {
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
-                        text = "Connection Failed",
+                        text = title,
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
@@ -318,11 +371,27 @@ fun ModernErrorScreen(onRetry: () -> Unit) {
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     Text(
-                        text = "Unable to connect to the ERP server.\nPlease check your internet connection and try again.",
+                        text = message,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
-                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
+                        modifier = Modifier.semantics { 
+                            contentDescription = "Error message: $message" 
+                        }
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Additional helpful information
+                    Text(
+                        text = tip,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = tip }
                     )
                     
                     Spacer(modifier = Modifier.height(32.dp))
@@ -332,7 +401,9 @@ fun ModernErrorScreen(onRetry: () -> Unit) {
                     ) {
                         OutlinedButton(
                             onClick = onRetry,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { contentDescription = "Retry connection to ERP portal" },
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
@@ -406,6 +477,7 @@ fun ModernPageNotFoundScreen(onGoHome: () -> Unit) {
                     
                     Button(
                         onClick = onGoHome,
+                        modifier = Modifier.semantics { contentDescription = "Go to ERP portal home page" },
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
