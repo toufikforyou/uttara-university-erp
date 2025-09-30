@@ -157,4 +157,4 @@ jobs:
             - Tag version: ${{ steps.version.outputs.tag_version }}
           files: |
             ${{ steps.sign_abb.outputs.signedReleaseFile }}
-            app/release/apk/app-release.apk
+            ${{ steps.sign_app.outputs.signedReleaseFile }}
