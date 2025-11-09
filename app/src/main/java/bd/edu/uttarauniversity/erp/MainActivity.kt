@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.util.Log
 import android.view.ViewGroup
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -30,14 +31,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillWidth
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.semantics.contentDescription
-import androidx.compose.foundation.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
@@ -55,18 +54,19 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -87,17 +87,11 @@ sealed class WebViewState {
 }
 
 enum class ErrorType {
-    NETWORK,
-    SSL,
-    TIMEOUT,
-    UNKNOWN
+    NETWORK, SSL, TIMEOUT, UNKNOWN
 }
 
 data class ErrorInfo(
-    val title: String,
-    val message: String,
-    val icon: ImageVector,
-    val tip: String
+    val title: String, val message: String, val icon: ImageVector, val tip: String
 )
 
 class MainActivity : ComponentActivity() {
@@ -164,10 +158,9 @@ fun WebViewExample(modifier: Modifier) {
                             super.onReceivedError(view, request, error)
                             if (request?.isForMainFrame == true) {
                                 val errorType = when (error?.errorCode) {
-                                    WebViewClient.ERROR_HOST_LOOKUP,
-                                    WebViewClient.ERROR_CONNECT -> ErrorType.NETWORK
-                                    WebViewClient.ERROR_TIMEOUT -> ErrorType.TIMEOUT
-                                    WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> ErrorType.SSL
+                                    ERROR_HOST_LOOKUP, ERROR_CONNECT -> ErrorType.NETWORK
+                                    ERROR_TIMEOUT -> ErrorType.TIMEOUT
+                                    ERROR_FAILED_SSL_HANDSHAKE -> ErrorType.SSL
                                     else -> ErrorType.UNKNOWN
                                 }
                                 webViewState = WebViewState.Error(errorType)
@@ -198,24 +191,17 @@ fun WebViewExample(modifier: Modifier) {
 
             is WebViewState.Error -> {
                 ModernErrorScreen(
-                    errorType = webViewState.errorType,
-                    onRetry = { webView?.reload() }
-                )
+                    errorType = (webViewState as WebViewState.Error).errorType,
+                    onRetry = { webView?.reload() })
             }
 
             is WebViewState.PageNotFound -> {
                 ModernPageNotFoundScreen(
-                    onGoHome = { webView?.loadUrl(mUrl) }
-                )
+                    onGoHome = { webView?.loadUrl(mUrl) })
             }
 
             is WebViewState.Success -> {
-                // WebView is visible and loaded
-                if (webViewState.showSuccessMessage) {
-                    ModernSuccessIndicator {
-                        webViewState = WebViewState.Success(showSuccessMessage = false)
-                    }
-                }
+                Log.d("WebViewExample", "Success")
             }
         }
     }
@@ -225,15 +211,11 @@ fun WebViewExample(modifier: Modifier) {
 fun ModernLoadingScreen() {
     val infiniteTransition = rememberInfiniteTransition(label = "loading_animation")
     val scale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale_animation"
+        initialValue = 0.8f, targetValue = 1.1f, animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing), repeatMode = RepeatMode.Reverse
+        ), label = "scale_animation"
     )
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -261,18 +243,18 @@ fun ModernLoadingScreen() {
                     strokeWidth = 6.dp,
                     color = MaterialTheme.colorScheme.primary
                 )
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 Text(
                     text = "Loading ERP Portal...",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Medium
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Text(
                     text = "Please wait while we connect to the server",
                     style = MaterialTheme.typography.bodyMedium,
@@ -293,18 +275,21 @@ fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> U
             icon = Icons.Default.SignalWifiOff,
             tip = "💡 Tip: Make sure you have a stable internet connection"
         )
+
         ErrorType.SSL -> ErrorInfo(
             title = "Security Error",
             message = "There's a security issue with the connection.\nThe site's certificate may have expired.",
             icon = Icons.Default.Warning,
             tip = "🔒 Tip: This is usually a temporary server issue"
         )
+
         ErrorType.TIMEOUT -> ErrorInfo(
             title = "Connection Timeout",
             message = "The server is taking too long to respond.\nPlease try again in a moment.",
             icon = Icons.Default.SignalWifiOff,
             tip = "⏱️ Tip: The server might be busy. Please wait and retry"
         )
+
         ErrorType.UNKNOWN -> ErrorInfo(
             title = "Something Went Wrong",
             message = "An unexpected error occurred.\nPlease try refreshing the page.",
@@ -312,11 +297,9 @@ fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> U
             tip = "🔄 Tip: A simple refresh often fixes this issue"
         )
     }
-    
+
     AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(tween(500)),
-        exit = fadeOut(tween(300))
+        visible = true, enter = fadeIn(tween(500)), exit = fadeOut(tween(300))
     ) {
         Box(
             modifier = Modifier
@@ -340,15 +323,12 @@ fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> U
                     // Error Icon with Animation
                     val infiniteTransition = rememberInfiniteTransition(label = "error_animation")
                     val alpha by infiniteTransition.animateFloat(
-                        initialValue = 0.6f,
-                        targetValue = 1.0f,
-                        animationSpec = infiniteRepeatable(
+                        initialValue = 0.6f, targetValue = 1.0f, animationSpec = infiniteRepeatable(
                             animation = tween(1500, easing = LinearEasing),
                             repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "alpha_animation"
+                        ), label = "alpha_animation"
                     )
-                    
+
                     Icon(
                         imageVector = icon,
                         contentDescription = "Error: $title",
@@ -357,9 +337,9 @@ fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> U
                             .size(80.dp)
                             .alpha(alpha)
                     )
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     Text(
                         text = title,
                         style = MaterialTheme.typography.headlineSmall,
@@ -367,44 +347,42 @@ fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> U
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
-                    
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     Text(
                         text = message,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
                         lineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
-                        modifier = Modifier.semantics { 
-                            contentDescription = "Error message: $message" 
-                        }
-                    )
-                    
+                        modifier = Modifier.semantics {
+                            contentDescription = "Error message: $message"
+                        })
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     // Additional helpful information
                     Text(
                         text = tip,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .semantics { contentDescription = tip }
-                    )
-                    
+                            .semantics { contentDescription = tip })
+
                     Spacer(modifier = Modifier.height(32.dp))
-                    
+
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedButton(
-                            onClick = onRetry,
-                            modifier = Modifier
+                            onClick = onRetry, modifier = Modifier
                                 .weight(1f)
-                                .semantics { contentDescription = "Retry connection to ERP portal" },
-                            shape = RoundedCornerShape(12.dp)
+                                .semantics {
+                                    contentDescription = "Retry connection to ERP portal"
+                                }, shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
@@ -424,9 +402,7 @@ fun ModernErrorScreen(errorType: ErrorType = ErrorType.NETWORK, onRetry: () -> U
 @Composable
 fun ModernPageNotFoundScreen(onGoHome: () -> Unit) {
     AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(tween(500)),
-        exit = fadeOut(tween(300))
+        visible = true, enter = fadeIn(tween(500)), exit = fadeOut(tween(300))
     ) {
         Box(
             modifier = Modifier
@@ -453,18 +429,18 @@ fun ModernPageNotFoundScreen(onGoHome: () -> Unit) {
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(80.dp)
                     )
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     Text(
                         text = "Page Not Found",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
                     )
-                    
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     Text(
                         text = "The requested page could not be found.\nLet's get you back to the main portal.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -472,14 +448,13 @@ fun ModernPageNotFoundScreen(onGoHome: () -> Unit) {
                         textAlign = TextAlign.Center,
                         lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
                     )
-                    
+
                     Spacer(modifier = Modifier.height(32.dp))
-                    
+
                     Button(
-                        onClick = onGoHome,
-                        modifier = Modifier.semantics { contentDescription = "Go to ERP portal home page" },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
+                        onClick = onGoHome, modifier = Modifier.semantics {
+                            contentDescription = "Go to ERP portal home page"
+                        }, shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
@@ -504,15 +479,12 @@ fun ModernSuccessIndicator(onDismiss: () -> Unit) {
         delay(3000)
         onDismiss()
     }
-    
+
     AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(tween(500)),
-        exit = fadeOut(tween(500))
+        visible = true, enter = fadeIn(tween(500)), exit = fadeOut(tween(500))
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.TopCenter
+            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter
         ) {
             Card(
                 modifier = Modifier
@@ -535,7 +507,7 @@ fun ModernSuccessIndicator(onDismiss: () -> Unit) {
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
-                    
+
                     Text(
                         text = "Portal loaded successfully!",
                         style = MaterialTheme.typography.bodyMedium,
