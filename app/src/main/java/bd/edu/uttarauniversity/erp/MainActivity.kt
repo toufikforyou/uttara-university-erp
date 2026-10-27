@@ -1,5 +1,6 @@
 package bd.edu.uttarauniversity.erp
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
@@ -13,8 +14,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -52,12 +55,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +81,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import bd.edu.uttarauniversity.erp.download.DownloadController
+import bd.edu.uttarauniversity.erp.download.PdfViewerScreen
 import bd.edu.uttarauniversity.erp.ui.theme.UUTheme
 import kotlinx.coroutines.delay
 
@@ -121,6 +130,18 @@ fun WebViewExample(modifier: Modifier) {
     var webView: WebView? by remember { mutableStateOf(null) }
     var webViewState by remember { mutableStateOf<WebViewState>(WebViewState.Loading) }
 
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val downloadController = remember {
+        DownloadController(context.applicationContext, scope, SnackbarHostState())
+    }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(), downloadController::onStoragePermissionResult
+    )
+    downloadController.requestStoragePermission = {
+        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
     BackHandler(enabled = webView?.canGoBack() == true) {
         webView?.goBack()
     }
@@ -139,6 +160,15 @@ fun WebViewExample(modifier: Modifier) {
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
                     )
 
+                    addJavascriptInterface(
+                        downloadController.PageBridge(), DownloadController.BRIDGE_NAME
+                    )
+                    setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                        downloadController.onDownloadStart(
+                            this, url, userAgent, contentDisposition, mimeType
+                        )
+                    }
+
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
@@ -147,6 +177,7 @@ fun WebViewExample(modifier: Modifier) {
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
+                            view?.let(downloadController::onPageFinished)
                             if (webViewState !is WebViewState.Error && webViewState !is WebViewState.PageNotFound) {
                                 webViewState = WebViewState.Success(showSuccessMessage = true)
                             }
@@ -202,6 +233,73 @@ fun WebViewExample(modifier: Modifier) {
 
             is WebViewState.Success -> {
                 Log.d("WebViewExample", "Success")
+            }
+        }
+
+        downloadController.inProgressFileName?.let { fileName ->
+            DownloadProgressCard(
+                fileName = fileName,
+                onCancel = downloadController::cancelDownload,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        downloadController.openPdf?.let { pdf ->
+            PdfViewerScreen(
+                pdf = pdf,
+                onClose = downloadController::closePdf,
+                onSave = { downloadController.save(pdf) },
+                onShare = { downloadController.share(pdf) },
+                onOpenExternally = { downloadController.openExternally(pdf) }
+            )
+        }
+
+        SnackbarHost(
+            hostState = downloadController.snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+}
+
+@Composable
+fun DownloadProgressCard(fileName: String, onCancel: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(24.dp)
+                    .semantics { contentDescription = "Downloading $fileName" },
+                strokeWidth = 3.dp
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Downloading...",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = fileName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1
+                )
+            }
+            TextButton(onClick = onCancel) {
+                Text("Cancel")
             }
         }
     }
