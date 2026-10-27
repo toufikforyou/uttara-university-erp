@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Files downloaded from the ERP portal, kept in the app cache for viewing and sharing. -->
+    <cache-path
+        name="downloads"
+        path="downloads/" />
+    <!-- Files saved to Downloads/Uttara University on Android 8 and 9. -->
+    <external-path
+        name="saved_downloads"
+        path="Download/Uttara University/" />
+</paths>
