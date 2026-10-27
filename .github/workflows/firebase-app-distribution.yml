@@ -84,6 +84,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default 'tools' package was removed from the SDK repository.
+          packages: 'platform-tools'
 
       - name: Build Release Application (APK)
         run: ./gradlew assembleRelease
