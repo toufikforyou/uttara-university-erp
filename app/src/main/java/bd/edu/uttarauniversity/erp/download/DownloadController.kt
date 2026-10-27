@@ -31,6 +31,10 @@ class DownloadController(
     private var downloadJob: Job? = null
     private var pendingSave: DownloadedFile? = null
 
+    /** Last POST form the page submitted; written from the JavaScript bridge thread. */
+    @Volatile
+    private var lastFormSubmission: FormSubmission? = null
+
     /** Name of the file being downloaded, or null when idle. */
     var inProgressFileName by mutableStateOf<String?>(null)
         private set
@@ -60,10 +64,24 @@ class DownloadController(
                 }
             }
 
-            else -> startDownload(
-                DownloadRequest(url, userAgent, contentDisposition, mimeType, referer = webView.url)
-            )
+            else -> {
+                val form = lastFormSubmission
+                val replayForm = DownloadUtils.shouldReplayFormSubmission(form, url, System.currentTimeMillis())
+                if (replayForm) lastFormSubmission = null
+                startDownload(
+                    DownloadRequest(
+                        url, userAgent, contentDisposition, mimeType,
+                        referer = webView.url,
+                        formBody = if (replayForm) form?.body else null
+                    )
+                )
+            }
         }
+    }
+
+    /** Installs the form recorder; call when every page finishes loading. */
+    fun onPageFinished(webView: WebView) {
+        webView.evaluateJavascript(DownloadUtils.buildFormCaptureScript(BRIDGE_NAME), null)
     }
 
     private fun startDownload(request: DownloadRequest) {
@@ -74,6 +92,9 @@ class DownloadController(
                 handleDownloaded(downloader.download(request))
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: UnexpectedWebPageException) {
+                Log.e(TAG, "Download returned a web page", e)
+                showMessage("The file couldn't be generated. Please go back and try again.")
             } catch (e: Exception) {
                 Log.e(TAG, "Download failed", e)
                 showMessage("Download failed. Please check your connection and try again.")
@@ -193,8 +214,14 @@ class DownloadController(
         scope.launch { snackbarHostState.showSnackbar(message, withDismissAction = true) }
     }
 
-    /** JavaScript interface that receives the contents of `blob:` downloads from the page. */
-    inner class BlobBridge {
+    /** JavaScript interface for the page: `blob:` download contents and form submissions. */
+    inner class PageBridge {
+        @JavascriptInterface
+        fun onFormSubmit(action: String?, body: String?) {
+            if (action.isNullOrBlank() || body == null) return
+            lastFormSubmission = FormSubmission(action, body, System.currentTimeMillis())
+        }
+
         @JavascriptInterface
         fun onBlobData(dataUrl: String?, contentDisposition: String?, mimeType: String?) {
             val data = DownloadUtils.parseDataUrl(dataUrl)
