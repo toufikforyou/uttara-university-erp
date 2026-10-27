@@ -13,6 +13,11 @@ data class FileMetadata(val fileName: String, val mimeType: String) {
 }
 
 /**
+ * A form POST the page submitted, recorded so the request can be repeated if it turns into a download.
+ */
+data class FormSubmission(val action: String, val body: String, val timestampMillis: Long)
+
+/**
  * Decoded contents of a `data:` URL.
  */
 class DataUrl(val mimeType: String?, val bytes: ByteArray)
@@ -304,6 +309,98 @@ object DownloadUtils {
             })();
         """.trimIndent()
     }
+
+    /** How long after a form POST a download from the same URL is treated as that POST's response. */
+    const val FORM_SUBMISSION_MAX_AGE_MILLIS = 2 * 60 * 1000L
+
+    private val HTML_MIME_TYPES = setOf("text/html", "application/xhtml+xml")
+
+    /**
+     * Returns true when the download from [downloadUrl] is the response to the recorded [form] POST.
+     * WebView only reports the URL of such a download, so it has to be requested again as the same
+     * POST; a plain GET returns the page with the form instead of the file.
+     */
+    fun shouldReplayFormSubmission(form: FormSubmission?, downloadUrl: String?, nowMillis: Long): Boolean {
+        if (form == null || downloadUrl == null) return false
+        val age = nowMillis - form.timestampMillis
+        if (age < 0 || age > FORM_SUBMISSION_MAX_AGE_MILLIS) return false
+        val formUrl = normalizeUrlForComparison(form.action) ?: return false
+        return formUrl == normalizeUrlForComparison(downloadUrl)
+    }
+
+    /** Lowercases scheme and host, drops the fragment and default ports. Null for invalid URLs. */
+    fun normalizeUrlForComparison(url: String): String? {
+        val uri = runCatching { URI(url.trim()) }.getOrNull() ?: return null
+        val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+        val port = when {
+            uri.port == -1 -> ""
+            scheme == "https" && uri.port == 443 -> ""
+            scheme == "http" && uri.port == 80 -> ""
+            else -> ":${uri.port}"
+        }
+        val path = uri.rawPath?.ifEmpty { "/" } ?: "/"
+        val query = uri.rawQuery?.let { "?$it" } ?: ""
+        return "$scheme://$host$port$path$query"
+    }
+
+    /** Returns true when the MIME type or the first bytes show the content is a web page. */
+    fun looksLikeHtml(mimeType: String?, head: ByteArray = ByteArray(0)): Boolean {
+        if (normalizeMimeType(mimeType) in HTML_MIME_TYPES) return true
+        val start = String(head, 0, minOf(head.size, 256), Charsets.UTF_8)
+            .trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+            .lowercase(Locale.ROOT)
+        return start.startsWith("<!doctype html") || start.startsWith("<html")
+    }
+
+    /**
+     * Script that records every POST form submission on the page and reports it to the JavaScript
+     * interface named [bridgeName] (`onFormSubmit(action, urlEncodedBody)`). Forms with file inputs
+     * are skipped. Safe to run more than once per page.
+     */
+    fun buildFormCaptureScript(bridgeName: String): String = """
+        (function() {
+          if (window.__uuFormCaptureInstalled) { return; }
+          var bridge = window.$bridgeName;
+          if (!bridge || !window.FormData || !window.URLSearchParams) { return; }
+          window.__uuFormCaptureInstalled = true;
+
+          function resolve(url) {
+            try { return new URL(url || location.href, document.baseURI).href; } catch (e) { return location.href; }
+          }
+
+          function record(form, submitter) {
+            try {
+              if (!(form instanceof HTMLFormElement)) { return; }
+              var useSubmitter = submitter && submitter.form === form;
+              var method = (useSubmitter && submitter.getAttribute('formmethod')) || form.getAttribute('method') || 'get';
+              if (method.toLowerCase() !== 'post') { return; }
+              var action = resolve(useSubmitter && submitter.hasAttribute('formaction')
+                ? submitter.getAttribute('formaction') : form.getAttribute('action'));
+
+              var data = new FormData(form);
+              if (useSubmitter && submitter.name) { data.append(submitter.name, submitter.value || ''); }
+              var params = new URLSearchParams();
+              var hasFile = false;
+              data.forEach(function(value, key) {
+                if (typeof value === 'string') { params.append(key, value); } else { hasFile = true; }
+              });
+              if (hasFile) { return; }
+              bridge.onFormSubmit(action, params.toString());
+            } catch (e) {}
+          }
+
+          document.addEventListener('submit', function(event) {
+            record(event.target, event.submitter);
+          }, true);
+
+          var nativeSubmit = HTMLFormElement.prototype.submit;
+          HTMLFormElement.prototype.submit = function() {
+            record(this, null);
+            return nativeSubmit.apply(this, arguments);
+          };
+        })();
+    """.trimIndent()
 
     /** Returns [fileName], or `name (n).ext` for the first n that does not [exists]. */
     fun uniqueFileName(fileName: String, exists: (String) -> Boolean): String {

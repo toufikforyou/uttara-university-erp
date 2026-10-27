@@ -225,4 +225,66 @@ class DownloadUtilsTest {
         assertEquals("notes (1)", DownloadUtils.uniqueFileName("notes") { it in taken })
         assertEquals("new.pdf", DownloadUtils.uniqueFileName("new.pdf") { it in taken })
     }
+
+    private val payslipForm = FormSubmission(
+        action = "https://erp.uttarauniversity.edu.bd/student/manual-payslip",
+        body = "_token=abc&amount=5000",
+        timestampMillis = 1_000L
+    )
+
+    @Test
+    fun shouldReplayFormSubmission_matchesSameUrl() {
+        assertTrue(
+            DownloadUtils.shouldReplayFormSubmission(
+                payslipForm, "https://ERP.uttarauniversity.edu.bd:443/student/manual-payslip#top", 5_000L
+            )
+        )
+    }
+
+    @Test
+    fun shouldReplayFormSubmission_rejectsOtherUrlsAndStaleForms() {
+        assertFalse(
+            DownloadUtils.shouldReplayFormSubmission(
+                payslipForm, "https://erp.uttarauniversity.edu.bd/files/payslip.pdf", 5_000L
+            )
+        )
+        assertFalse(
+            DownloadUtils.shouldReplayFormSubmission(
+                payslipForm, "https://erp.uttarauniversity.edu.bd/student/manual-payslip?id=2", 5_000L
+            )
+        )
+        assertFalse(
+            DownloadUtils.shouldReplayFormSubmission(
+                payslipForm, payslipForm.action,
+                payslipForm.timestampMillis + DownloadUtils.FORM_SUBMISSION_MAX_AGE_MILLIS + 1
+            )
+        )
+        assertFalse(DownloadUtils.shouldReplayFormSubmission(null, payslipForm.action, 5_000L))
+        assertFalse(DownloadUtils.shouldReplayFormSubmission(payslipForm, null, 5_000L))
+    }
+
+    @Test
+    fun normalizeUrlForComparison_handlesPortsAndInvalidUrls() {
+        assertEquals("https://x.edu/a?b=1", DownloadUtils.normalizeUrlForComparison("HTTPS://X.edu:443/a?b=1#c"))
+        assertEquals("http://x.edu:8080/", DownloadUtils.normalizeUrlForComparison("http://x.edu:8080"))
+        assertNull(DownloadUtils.normalizeUrlForComparison("not a url"))
+    }
+
+    @Test
+    fun looksLikeHtml_detectsByMimeTypeOrContent() {
+        assertTrue(DownloadUtils.looksLikeHtml("text/html; charset=UTF-8"))
+        assertTrue(DownloadUtils.looksLikeHtml(null, "\uFEFF\n  <!DOCTYPE html><html>".toByteArray()))
+        assertTrue(DownloadUtils.looksLikeHtml("application/octet-stream", "<HTML><body>".toByteArray()))
+        assertFalse(DownloadUtils.looksLikeHtml("application/pdf", pdfBytes))
+        assertFalse(DownloadUtils.looksLikeHtml(null))
+    }
+
+    @Test
+    fun buildFormCaptureScript_recordsPostForms() {
+        val script = DownloadUtils.buildFormCaptureScript("UUAndroidDownloader")
+        assertTrue(script.contains("window.UUAndroidDownloader"))
+        assertTrue(script.contains("bridge.onFormSubmit(action, params.toString())"))
+        assertTrue(script.contains("HTMLFormElement.prototype.submit"))
+        assertTrue(script.contains("'submit'"))
+    }
 }

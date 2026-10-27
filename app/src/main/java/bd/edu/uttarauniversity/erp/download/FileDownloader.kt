@@ -29,8 +29,16 @@ data class DownloadRequest(
     val userAgent: String?,
     val contentDisposition: String?,
     val mimeType: String?,
-    val referer: String? = null
+    val referer: String? = null,
+    /** URL-encoded form body; when set the file is requested with a POST. */
+    val formBody: String? = null
 )
+
+/**
+ * The server answered with a web page although WebView reported a file, e.g. because the file is
+ * only returned for the original form submission.
+ */
+class UnexpectedWebPageException : IOException("The server returned a web page instead of the file")
 
 /**
  * Downloads files the ERP portal serves. Requests carry the WebView's cookies so that files behind
@@ -49,13 +57,21 @@ class FileDownloader(private val context: Context) {
                 target.outputStream().use { output -> copy(input, output) }
             }
 
+            val head = readHead(target)
+            if (DownloadUtils.looksLikeHtml(connection.contentType, head) &&
+                !DownloadUtils.looksLikeHtml(request.mimeType)
+            ) {
+                target.parentFile?.deleteRecursively()
+                throw UnexpectedWebPageException()
+            }
+
             val metadata = DownloadUtils.resolveMetadata(
                 url = connection.url.toString(),
                 requestContentDisposition = request.contentDisposition,
                 requestMimeType = request.mimeType,
                 responseContentDisposition = connection.getHeaderField("Content-Disposition"),
                 responseMimeType = connection.contentType,
-                head = readHead(target)
+                head = head
             )
             moveToFinalName(target, metadata)
         } finally {
@@ -81,6 +97,7 @@ class FileDownloader(private val context: Context) {
 
     private fun openConnection(request: DownloadRequest): HttpURLConnection {
         var url = URL(request.url)
+        var formBody = request.formBody
         repeat(MAX_REDIRECTS + 1) {
             if (url.protocol != "http" && url.protocol != "https") {
                 throw IOException("Unsupported download address")
@@ -95,6 +112,15 @@ class FileDownloader(private val context: Context) {
                     setRequestProperty("Cookie", it)
                 }
             }
+            formBody?.let { body ->
+                val bytes = body.toByteArray(Charsets.UTF_8)
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                connection.setRequestProperty("Origin", "${url.protocol}://${url.authority}")
+                connection.outputStream.use { it.write(bytes) }
+            }
 
             when (val code = connection.responseCode) {
                 in 200..299 -> return connection
@@ -104,6 +130,8 @@ class FileDownloader(private val context: Context) {
                     connection.disconnect()
                     if (location.isNullOrBlank()) throw IOException("Server returned HTTP $code")
                     url = URL(url, location)
+                    // Like browsers, only 307 and 308 repeat the POST; other redirects become a GET.
+                    if (code != HTTP_TEMPORARY_REDIRECT && code != HTTP_PERMANENT_REDIRECT) formBody = null
                 }
 
                 else -> {

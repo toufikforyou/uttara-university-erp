@@ -161,7 +161,7 @@ fun WebViewExample(modifier: Modifier) {
                     )
 
                     addJavascriptInterface(
-                        downloadController.BlobBridge(), DownloadController.BRIDGE_NAME
+                        downloadController.PageBridge(), DownloadController.BRIDGE_NAME
                     )
                     setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
                         downloadController.onDownloadStart(
@@ -177,6 +177,7 @@ fun WebViewExample(modifier: Modifier) {
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
+                            view?.let(downloadController::onPageFinished)
                             if (webViewState !is WebViewState.Error && webViewState !is WebViewState.PageNotFound) {
                                 webViewState = WebViewState.Success(showSuccessMessage = true)
                             }
